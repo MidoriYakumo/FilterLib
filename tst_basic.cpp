@@ -40,9 +40,6 @@ int main(int argc, char *argv[])
 		b3(b2(b4));
 		b3 >> b1 >> b2 >> b4;
 		cout << b1 << ' ' << b2 << ' ' << b3 << ' ' << b4 << endl;
-		std::vector<float> v;
-		b2 >> v;
-		cout << v[0] << ' '<< v[1] << endl;
 		cout << endl;
 	}
 

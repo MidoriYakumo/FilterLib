@@ -49,6 +49,7 @@ template<typename ValueT>
 struct Buffer_T {
 	typedef ValueT ValueType;
 	static const ValueType zero;
+//	static constexpr ValueType zero = Buffer_T<ValueT>::ValueType();
 	static constexpr bool linear = false;
 	static ValueType mix(ValueType a, ValueType b, fsize_t u) {
 		return (u < fsize_t(0.5)) ? a : b;
@@ -57,12 +58,13 @@ struct Buffer_T {
 
 template<typename ValueT>
 const typename Buffer_T<ValueT>::ValueType Buffer_T<ValueT>::zero =
-		Buffer_T<ValueT>::ValueType();
+	Buffer_T<ValueT>::ValueType();
 
 template<>
 struct Buffer_T<int> {
 	typedef int ValueType;
 	static const ValueType zero;
+//	static constexpr ValueType zero = 0;
 	static constexpr bool linear = true;
 	static ValueType mix(ValueType a, ValueType b, fsize_t u) {
 		return ValueType(std::round(a * (fsize_t(1.0) - u) + b * u));
@@ -70,12 +72,13 @@ struct Buffer_T<int> {
 };
 
 const Buffer_T<int>::ValueType Buffer_T<int>::zero =
-		0;
+	0;
 
 template<>
 struct Buffer_T<float> {
 	typedef float ValueType;
 	static const ValueType zero;
+//	static constexpr ValueType zero = 0;
 	static constexpr bool linear = true;
 	static ValueType mix(ValueType a, ValueType b, fsize_t u) {
 		return a * (fsize_t(1.0) - u) + b * u;
@@ -83,13 +86,13 @@ struct Buffer_T<float> {
 };
 
 const Buffer_T<float>::ValueType Buffer_T<float>::zero =
-		0;
+	0;
 
 
 static_assert(Buffer_T<fsize_t>::linear,
-			  "fsize_t not interpolatable");
+	"fsize_t not interpolatable");
 static_assert(Buffer_T<time_t>::linear,
-			  "time_t not interpolatable");
+	"time_t not interpolatable");
 
 
 template<typename T>
@@ -106,6 +109,17 @@ public:
 
 	virtual ~ProcessChain() { }
 
+	inline ProcessChain& operator<<(const T& input) {
+		in(input);
+		return *this;
+	}
+	inline ProcessChain& operator<<(const ProcessChain& prev) {
+		in(prev.out());
+		return *this;
+	}
+	inline T operator>>(T& output) const { return output = out(); }
+	inline T operator>>(ProcessChain& next) const { return next.in(out()); }
+	inline T operator()() const { return out(); }
 	inline T operator()(const T& input) { return in(input); }
 	inline T operator()(const ProcessChain& prev) { return in(prev.out()); }
 
@@ -116,8 +130,8 @@ public:
 			m_parent = parent;
 			m_simbling = parent->m_child;
 			m_index = (m_simbling == nullptr) ?
-						0 :
-						m_simbling->m_index + 1;
+				0 :
+				m_simbling->m_index + 1;
 			parent->m_child = this;
 		}
 	}
@@ -126,7 +140,7 @@ public:
 	inline ProcessChain* next() const { return m_simbling; }
 	inline size_t index() const { return m_index; }
 
-	inline T in(const T& input) {
+	virtual inline T in(const T& input) {
 		T output = process(input);
 		if (m_simbling != nullptr)
 			m_simbling->in(input);
@@ -145,32 +159,14 @@ protected:
 };
 
 template<typename T>
-inline ProcessChain<T>& operator<<(ProcessChain<T>& a,
-								   const T& b) {
-	a.in(b);
-	return a;
-}
-
-template<typename T>
-inline ProcessChain<T>& operator<<(ProcessChain<T>& a,
-								   const ProcessChain<T>& b) {
-	a.in(b.out());
-	return a;
-}
-
-template<typename T>
 std::ostream& operator<<(std::ostream& a, const ProcessChain<T>& b) {
 	return a << b.out();
 }
 
 template<typename T>
-inline T operator>>(const T& a, ProcessChain<T>& b) { return b.in(a); }
-
-template<typename T>
-inline T operator>>(const ProcessChain<T>& a, T& b) { return b = a.out(); }
-
-template<typename T>
-inline T operator>>(const ProcessChain<T>& a, ProcessChain<T>& b) { return b.in(a.out()); }
+inline T operator>>(const T& a, ProcessChain<T>& b) {
+	return b.in(a);
+}
 
 template<typename T>
 class AbstractBuffer {
@@ -178,6 +174,11 @@ public:
 	typedef Buffer_T<T> trait;
 
 	virtual ~AbstractBuffer() { }
+
+	//inline std::vector<T>& operator>>(std::vector<T>& vector) const {
+	//	to(vector);
+	//	return vector;
+	//}
 
 	virtual T out() const = 0; // get current
 	virtual T sample(fsize_t index, SampleType type = Linear) const = 0;
@@ -193,12 +194,6 @@ std::ostream& operator<<(std::ostream& a, const AbstractBuffer<T>& b) {
 	ss << "AbstractBuffer(" << b.out() << ")";
 	a << ss.str();
 	return a;
-}
-
-template<typename T>
-inline std::vector<T>& operator>>(const AbstractBuffer<T>& a, std::vector<T>& b) {
-	a.to(b);
-	return b;
 }
 
 template<typename T>
@@ -230,7 +225,7 @@ public:
 		index = std::min(index, static_cast<fsize_t>(std::deque<T>::size() - 1));
 		T result;
 
-		if (!Buffer<T>::trait::linear)
+		if (!Buffer::trait::linear)
 			type = Nearest;
 
 		switch (type)
@@ -241,8 +236,8 @@ public:
 			fsize_t ir = index - i0;
 			i1 = std::min(i1, std::deque<T>::size() - 1);
 			result = (ir < fsize_t(0.5)) ?
-						std::deque<T>::at(i0) :
-						std::deque<T>::at(i1);
+				std::deque<T>::at(i0) :
+				std::deque<T>::at(i1);
 			break;
 		}
 		case Linear:
@@ -251,9 +246,9 @@ public:
 			size_t i0 = static_cast<size_t>(index), i1 = i0 + 1;
 			fsize_t ir = index - i0;
 			i1 = std::min(i1, std::deque<T>::size() - 1);
-			result = Buffer<T>::trait::mix(std::deque<T>::at(i0),
-										   std::deque<T>::at(i1),
-										   ir);
+			result = Buffer::trait::mix(std::deque<T>::at(i0),
+				std::deque<T>::at(i1),
+				ir);
 			break;
 		}
 		}
@@ -264,8 +259,8 @@ public:
 	inline void to(std::vector<T>& vector) const override {
 		vector.reserve(std::deque<T>::size());
 		std::copy(std::deque<T>::cbegin(),
-				  std::deque<T>::cend(),
-				  vector.begin());
+			std::deque<T>::cend(),
+			vector.begin());
 	}
 
 	inline T in(const T& input) override {
@@ -274,8 +269,8 @@ public:
 
 	inline void fill(const T& value) override {
 		std::fill(std::deque<T>::begin(),
-				  std::deque<T>::end(),
-				  value);
+			std::deque<T>::end(),
+			value);
 	}
 
 protected:
@@ -383,11 +378,11 @@ std::string trace(const Buffer<T>& head) {
 
 	s = header;
 	std::sort(list.begin(), list.end(),
-			  [](const _buf_info& a, const _buf_info& b) {
+		[](const _buf_info& a, const _buf_info& b) {
 		return a.endpos < b.endpos;
 	});
 	auto max_size = std::max_element(list.cbegin(), list.cend(),
-									 [](const _buf_info& a, const _buf_info& b) {
+		[](const _buf_info& a, const _buf_info& b) {
 		return a.buffer->size() < b.buffer->size();
 	})->buffer->size();
 	ss << std::endl << std::string(endpos, '_');
@@ -395,7 +390,7 @@ std::string trace(const Buffer<T>& head) {
 	for (size_t i = 0; i < max_size; ++i) {
 		ss << std::endl;
 		size_t endpos = 0;
-		for (auto &buf: list) {
+		for (auto &buf : list) {
 			ss << std::setw(buf.endpos - endpos);
 			endpos = buf.endpos;
 			if (buf.buffer->size() > i)
@@ -415,15 +410,21 @@ class NuBuffer :
 {
 public:
 	NuBuffer(size_t size,
-			 Buffer<time_t>* timeRef,
-			 ProcessChain<T>* parent = nullptr) :
+		Buffer<time_t>* timeRef,
+		ProcessChain<T>* parent = nullptr) :
 		Buffer<T>(size, parent)
 	{
 		ASSERT(size > 1);
 		setTimeRef(timeRef);
 	}
 
-	inline std::string name() const override {
+	//inline std::vector<TimeValuePair<T>>& operator>>(
+	//		std::vector<TimeValuePair<T>>& vector) const {
+	//	to(vector);
+	//	return vector;
+	//}
+
+	virtual inline std::string name() const override {
 		return this->m_name.empty() ? "NuBuffer" : this->m_name;
 	}
 
@@ -482,7 +483,7 @@ public:
 		vector.clear();
 		for (size_t i = 0; i < std::deque<T>::size(); ++i)
 			vector.emplace_back(TimeValuePair<T>(m_timeRef->at(i),
-													 std::deque<T>::at(i)));
+				std::deque<T>::at(i)));
 	}
 
 	inline Buffer<time_t>* timeRef() const { return m_timeRef; }
@@ -492,16 +493,10 @@ public:
 		m_timeRef = timeRef;
 	}
 
-	inline void setParent(NuBuffer<T>* parent) {
-		ASSERT(ProcessChain<T>::m_parent == nullptr);
+	inline void setParent(NuBuffer* parent) {
+		ProcessChain<T>::setParent(parent);
 		if (parent != nullptr) {
-			ProcessChain<T>::m_index = (ProcessChain<T>::m_simbling == nullptr) ?
-						0 :
-						ProcessChain<T>::m_simbling->m_index + 1;
-			ProcessChain<T>::m_parent = static_cast<ProcessChain<T>*>(parent);
-			ProcessChain<T>::m_simbling = parent->m_child;
 			m_timeRef = parent->m_timeRef;
-			parent->m_child = this;
 		}
 	}
 
@@ -514,7 +509,7 @@ std::ostream& operator<<(std::ostream& a, const NuBuffer<T>& b) {
 	ASSERT(b.timeRef() != nullptr);
 	std::stringstream ss;
 	ss << b.name() << "[" << b.size() << "](("
-	   << b.time() << "," << b.front() << ")";
+		<< b.time() << "," << b.front() << ")";
 	auto it = b.timeRef()->cbegin(), iv = b.cbegin();
 	while ((++iv) != b.cend()) {
 		ss << ", (" << *(++it) << "," << *iv << ")";
@@ -522,13 +517,6 @@ std::ostream& operator<<(std::ostream& a, const NuBuffer<T>& b) {
 	ss << ")";
 	a << ss.str();
 	return a;
-}
-
-template<typename T>
-inline std::vector<TimeValuePair<T>>& operator>>(const NuBuffer<T>& a,
-												 std::vector<TimeValuePair<T>>& b) {
-	a.to(b);
-	return b;
 }
 
 template<typename T>
@@ -543,7 +531,7 @@ std::string trace(const NuBuffer<T>& head) {
 	std::vector<size_t> stack;
 	std::vector<_buf_info> list;
 	Buffer<T> *curr = const_cast<Buffer<T>*>(
-				static_cast<const Buffer<T>*>(&head));
+		static_cast<const Buffer<T>*>(&head));
 	ProcessChain<T> *succ;
 
 	auto timeRef = head.timeRef();
@@ -621,11 +609,11 @@ std::string trace(const NuBuffer<T>& head) {
 
 	s = header;
 	std::sort(list.begin(), list.end(),
-			  [](const _buf_info& a, const _buf_info& b) {
+		[](const _buf_info& a, const _buf_info& b) {
 		return a.endpos < b.endpos;
 	});
 	auto max_size = std::max_element(list.cbegin(), list.cend(),
-									 [](const _buf_info& a, const _buf_info& b) {
+		[](const _buf_info& a, const _buf_info& b) {
 		return a.buffer->size() < b.buffer->size();
 	})->buffer->size();
 	ASSERT(max_size <= timeRef->size());
@@ -635,7 +623,7 @@ std::string trace(const NuBuffer<T>& head) {
 		ss << std::endl;
 		ss << std::setw(padding - 3) << timeRef->at(i) << std::string(3, ' ');
 		size_t endpos = padding;
-		for (auto &buf: list) {
+		for (auto &buf : list) {
 			ss << std::setw(buf.endpos - endpos);
 			endpos = buf.endpos;
 			if (buf.buffer->size() > i)

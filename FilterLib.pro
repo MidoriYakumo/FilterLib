@@ -24,7 +24,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += \
-    tst_basic.cpp
+	tst_filter.cpp
 
 HEADERS += \
 	buffer.h \

@@ -64,16 +64,15 @@ public:
 
 	virtual ~Filter() { }
 
-	inline T out() const { return this->m_out; }
+	inline T out() const override { return this->m_out; }
 
 	inline T in(const T& input) override {
-		return ProcessChain<T>::in(input);
+		return this->m_out = ProcessChain<T>::in(input);
 	}
 
 protected:
 	virtual inline T process(const T& input) override {
-		this->m_out = input;
-		return this->m_out;
+		return input;
 	}
 };
 
@@ -83,15 +82,13 @@ class NuFilter :
 {
 public:
 	NuFilter(Buffer<time_t>* timeRef,
-			 ProcessChain<T>* parent = nullptr) :
+		ProcessChain<T>* parent = nullptr) :
 		Filter<T>(parent)
 	{
 		setTimeRef(timeRef);
 	}
 
 	virtual ~NuFilter() { }
-
-	inline T out() const { return this->m_out; }
 
 	inline time_t time() const {
 		ASSERT(m_timeRef != nullptr);
@@ -104,29 +101,14 @@ public:
 	}
 
 	inline void setParent(NuBuffer<T>* parent) {
-		ASSERT(ProcessChain<T>::m_parent == nullptr);
+		ProcessChain<T>::setParent(parent);
 		if (parent != nullptr) {
-			ProcessChain<T>::m_parent = static_cast<ProcessChain<T>*>(parent);
-			ProcessChain<T>::m_simbling = parent->m_child;
-			ProcessChain<T>::m_index = (ProcessChain<T>::m_simbling == nullptr) ?
-				0 :
-				ProcessChain<T>::m_simbling->m_index + 1;
 			m_timeRef = parent->m_timeRef;
-			parent->m_child = this;
 		}
-	}
-
-	inline T in(const T& input) override {
-		return ProcessChain<T>::in(input);
 	}
 
 protected:
 	Buffer<time_t> *m_timeRef;
-
-	virtual inline T process(const T& input) override {
-		this->m_out = input;
-		return this->m_out;
-	}
 };
 
 
@@ -135,8 +117,8 @@ class Comparator :
 	public Filter<T>
 {
 public:
-	Comparator(const T& initial = Comparator<T>::trait::zero,
-			   ProcessChain<T>* parent = nullptr) :
+	Comparator(const T& initial = Filter<T>::trait::zero,
+		ProcessChain<T>* parent = nullptr) :
 		Filter<T>(parent),
 		m_low(Comparator<T>::trait::zero),
 		m_high(Comparator<T>::trait::zero)
@@ -158,11 +140,12 @@ protected:
 	T m_low, m_high;
 
 	inline T process(const T& input) override {
+		auto output = this->m_out;
 		if (input < m_low)
-			this->m_out = Comparator<T>::trait::zero;
+			output = Comparator<T>::trait::zero;
 		else if (input > m_high)
-			this->m_out = Comparator<T>::trait::unit;
-		return this->m_out;
+			output = Comparator<T>::trait::unit;
+		return output;
 	}
 };
 
@@ -172,21 +155,26 @@ class HoldHigh :
 {
 public:
 	HoldHigh(size_t size, ProcessChain<T>* parent = nullptr) :
-		Filter<T>(),
-		m_input(size, parent)
+		Filter<T>(parent),
+		m_input(size)
 	{
-		ProcessChain<T>::setParent(&m_input);
+
 	}
 
 protected:
 	Buffer<T> m_input;
 
 	inline T process(const T& input) override {
-		(void)(input);
-		this->m_out = *(std::max_element(m_input.cbegin(), m_input.cend()));
-		return this->m_out;
+		auto last = m_input.back();
+		auto output = this->m_out;
+		m_input.in(input);
+		if (input >= output)
+			output = input;
+		else if (output == last)
+			output = *(std::max_element(m_input.cbegin(), m_input.cend()));
+		// else not changed
+		return output;
 	}
-
 };
 
 template<typename T>
@@ -195,20 +183,26 @@ class HoldLow :
 {
 public:
 	HoldLow(size_t size, ProcessChain<T>* parent = nullptr) :
-		Filter<T>(),
-		m_input(size, parent)
+		Filter<T>(parent),
+		m_input(size)
 	{
-		ProcessChain<T>::setParent(&m_input);
+
 	}
 
 protected:
 	Buffer<T> m_input;
 
 	inline T process(const T& input) override {
-		this->m_out = *(std::min_element(m_input.cbegin(), m_input.cend()));
-		return this->m_out;
+		auto last = m_input.back();
+		auto output = this->m_out;
+		m_input.in(input);
+		if (input >= output)
+			output = input;
+		else if (output == last)
+			output = *(std::min_element(m_input.cbegin(), m_input.cend()));
+		// else not changed
+		return output;
 	}
-
 };
 
 template <typename T>
@@ -233,10 +227,8 @@ protected:
 	T m_low, m_high;
 
 	inline T process(const T& input) override {
-		this->m_out = (input < m_low) ? m_low : (input > m_high) ? m_high : input;
-		return this->m_out;
+		return (input < m_low) ? m_low : (input > m_high) ? m_high : input;
 	}
-
 };
 
 template<typename T>
@@ -259,10 +251,8 @@ protected:
 		(void)(input);
 		m_input.to(m_tmpBuf);
 		std::sort(m_tmpBuf.begin(), m_tmpBuf.end());
-		this->m_out = m_tmpBuf[m_input.size() / 2];
-		return this->m_out;
+		return m_tmpBuf[m_input.size() / 2];
 	}
-
 };
 
 //template <>
@@ -271,8 +261,8 @@ class HistAntiJitter :
 {
 public:
 	HistAntiJitter(size_t size, size_t histSize,
-				   float tMin, float tMax,
-				   float margin = 0.05f, ProcessChain<float>* parent = nullptr) :
+		float tMin, float tMax,
+		float margin = 0.05f, ProcessChain<float>* parent = nullptr) :
 		Filter<float>(),
 		m_histSize(histSize),
 		m_margin(size_t(size * margin)),
@@ -311,14 +301,15 @@ protected:
 		}
 		hHigh++;
 
-		this->m_out = input;
+		auto output = input;
 		if (hCurrent < hLow) {
-			this->m_out = what(hLow);
-		} else if (hCurrent > hHigh) {
-			this->m_out = what(hHigh + 1);
+			output = what(hLow);
+		}
+		else if (hCurrent > hHigh) {
+			output = what(hHigh + 1);
 		}
 
-		return this->m_out;
+		return output;
 	}
 
 	inline float what(size_t h) const {
